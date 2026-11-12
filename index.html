@@ -70,6 +70,7 @@ input[type=text]{width:100%;font-size:20px}
 </div></header>
 <main id="app"></main>
 <script src="data.js"></script>
+  <script>(function(){function f(s){return typeof s==='string'?s.replace(/^(img|audio)\//,''):s}window.EXAMS.forEach(function(e){if(e.intro){e.intro.I=f(e.intro.I);e.intro.II=f(e.intro.II)}e.questions.forEach(function(q){if(q.audio)q.audio=f(q.audio);if(q.img)q.img=f(q.img)});e.passages.forEach(function(p){if(p.img)p.img=f(p.img)})})})();</script>
 <script>
 "use strict";
 /* ---------- helpers ---------- */
