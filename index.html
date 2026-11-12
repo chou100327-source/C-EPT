@@ -56,6 +56,11 @@ ul{padding-left:20px;margin:6px 0}
 input[type=text]{width:100%;font-size:20px}
 .good{color:var(--ok)}.bad{color:var(--bad)}
 .hidden{display:none}
+.dots{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.dot{min-width:40px;padding:4px 8px;font-size:14px}
+.dot.ok{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.dot.no{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.dot.cur{outline:2px solid var(--pri)}
 </style>
 </head>
 <body>
@@ -92,13 +97,13 @@ const defText=w=>w.d.map(d=>d[1]).join('；');
 const SECTIONS=[['all','全部 21–60',21,60],['arr','重組 21–25',21,25],['voc','詞彙與結構 26–40',26,40],['clz','綜合測驗 41–50',41,50],['rd','閱讀測驗 51–60',51,60]];
 
 /* ---------- router ---------- */
-const TABS=[['home','總覽'],['cards','單字卡'],['quiz','單字測驗'],['exam','歷屆題'],['wrong','錯題本'],['guide','考試資源']];
+const TABS=[['home','總覽'],['cards','單字卡'],['quiz','單字測驗'],['full','去年試題'],['exam','歷屆題'],['wrong','錯題本'],['guide','考試資源']];
 let tab=location.hash.slice(1)||'home';
 function go(t){tab=t;location.hash=t;render()}
 function render(){
   $('#nav').innerHTML=TABS.map(([k,n])=>`<button class="${k===tab?'on':''}" data-t="${k}">${n}${k==='wrong'&&Object.keys(wrongQ).length?` (${Object.keys(wrongQ).length})`:''}</button>`).join('');
   $('#nav').onclick=e=>{const t=e.target.dataset.t;if(t)go(t)};
-  ({home,cards,quiz,exam,wrong,guide}[tab]||home)();
+  ({home,cards,quiz,full,exam,wrong,guide}[tab]||home)();
   window.scrollTo(0,0);
 }
 window.addEventListener('hashchange',()=>{const t=location.hash.slice(1);if(t&&t!==tab){tab=t;render()}});
@@ -127,7 +132,7 @@ function home(){
     <li><b>歷屆題</b>：先做「詞彙與結構」，再練「重組」「綜合」「閱讀」，最後做整回模擬。</li>
     <li><b>錯題本</b>：集中重做錯過的題目，答對才會移出。</li>
     <li><b>聽力</b>需要音檔與圖片，請到官網下載（見「考試資源」）。</li></ol>
-   <div class="row"><button class="b pri" data-go="cards">開始背單字</button><button class="b" data-go="exam">做歷屆題</button></div></div>
+   <div class="row"><button class="b pri" data-go="cards">開始背單字</button><button class="b" data-go="full">做去年試題（含聽力）</button><button class="b" data-go="exam">做歷屆題</button></div></div>
   <div class="card"><h2>最近的練習</h2>${last.length?last.map(h=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0"><span>${esc(h.title)}</span><span><b>${h.right}/${h.total}</b> <span class="mute small">${new Date(h.at).toLocaleDateString('zh-TW')}</span></span></div>`).join(''):'<span class="mute">還沒有紀錄。</span>'}
    <div style="margin-top:12px"><button class="b small" id="reset">清除所有進度</button></div></div>`;
   $('#app').onclick=e=>{const g=e.target.dataset.go;if(g)go(g);if(e.target.id==='reset')ask('確定清除所有學習紀錄？',()=>{prog={};wrongQ={};hist=[];saveProg();saveWrong();saveHist();render()})};
@@ -135,12 +140,22 @@ function home(){
 
 /* ---------- flashcards ---------- */
 let fc={letter:'all',mode:'due',deck:[],i:0,open:false};
+function saveFc(){store.set('fc',{letter:fc.letter,mode:fc.mode,keys:fc.deck.map(vkey),i:fc.i})}
+(function restoreFc(){
+  const sv=store.get('fc',null);
+  if(!sv||!Array.isArray(sv.keys))return;
+  const byKey=new Map(V.map(w=>[vkey(w),w]));
+  const deck=sv.keys.map(k=>byKey.get(k)).filter(Boolean);
+  if(!deck.length)return;
+  fc.letter=sv.letter||'all';fc.mode=sv.mode||'due';fc.deck=deck;
+  fc.i=Math.max(0,Math.min(+sv.i||0,deck.length));fc.started=true;
+})();
 function buildDeck(){
   let d=V.filter(w=>fc.letter==='all'||w.w[0].toUpperCase()===fc.letter);
   if(fc.mode==='due')d=d.filter(w=>P(w).box<3);
   else if(fc.mode==='hard')d=d.filter(w=>P(w).wrong>0&&P(w).box<4);
   d.sort((a,b)=>P(a).box-P(b).box||Math.random()-.5);
-  fc.deck=d.slice(0,fc.mode==='all'?d.length:60);fc.i=0;fc.open=false;
+  fc.deck=d.slice(0,fc.mode==='all'?d.length:60);fc.i=0;fc.open=false;saveFc();
 }
 function cards(){
   if(!fc.deck.length&&!fc.started){buildDeck();fc.started=true}
@@ -155,7 +170,7 @@ function cards(){
   <div id="fcard"></div>`;
   $('#fl').onchange=e=>{fc.letter=e.target.value;buildDeck();drawCard()};
   $('#fm').onchange=e=>{fc.mode=e.target.value;buildDeck();drawCard()};
-  $('#fb').onclick=()=>{buildDeck();if(fc.mode==='all')fc.deck=shuffle(fc.deck);drawCard()};
+  $('#fb').onclick=()=>{buildDeck();if(fc.mode==='all')fc.deck=shuffle(fc.deck);saveFc();drawCard()};
   drawCard();
 }
 function drawCard(){
@@ -177,7 +192,7 @@ function drawCard(){
 function rate(ok){
   const w=fc.deck[fc.i],p=P(w);p.seen++;
   if(ok)p.box=Math.min(4,p.box+1);else{p.box=0;p.wrong++}
-  saveProg();fc.i++;fc.open=false;drawCard();
+  saveProg();fc.i++;fc.open=false;saveFc();drawCard();
 }
 document.addEventListener('keydown',e=>{
   if(tab!=='cards'||e.target.tagName==='SELECT'||fc.i>=fc.deck.length)return;
@@ -286,18 +301,23 @@ function exam(){
   };
 }
 function passageFor(s,n){return s.passages.find(p=>n>=p.from&&n<=p.to)}
+const secName=n=>n<=10?'看圖辨意':n<=20?'簡短對話':n<=25?'重組':n<=40?'詞彙與結構':n<=50?'綜合測驗':'閱讀測驗';
+const audioTag=src=>`<audio controls preload="none" src="${esc(src)}" style="width:100%;margin:6px 0 8px"></audio>`;
 function qHTML(s,q,opts){
   const {selected,showAns}=opts;
   const p=passageFor(s,q.n);
+  const hide=q.hideChoices&&!showAns;
   return `<div class="card">
-   <div class="mute small">第 ${s.session} 屆・第 ${q.n} 題 ${q.n<=25?'重組':q.n<=40?'詞彙與結構':q.n<=50?'綜合測驗':'閱讀測驗'}</div>
+   <div class="mute small">第 ${s.session} 屆・第 ${q.n} 題 ${secName(q.n)}</div>
+   ${q.audio?audioTag(q.audio):''}
+   ${q.img?`<img src="${esc(q.img)}" alt="題目圖片" style="max-width:100%;display:block;margin:4px 0 10px;border-radius:8px">`:''}
    ${p&&opts.showPassage?`<div class="passage">${esc(p.text)}${p.img?`<img src="${p.img}" alt="題目圖片" style="max-width:100%;display:block;margin-top:8px;border-radius:8px">`:''}</div>`:''}
-   <div class="q">${esc(q.stem)||'（請依文章選擇）'}</div>
+   <div class="q">${esc(q.stem)||(q.audio?'（請聽音檔作答）':'（請依文章選擇）')}</div>
    ${['A','B','C','D'].map(k=>{
      let cls='opt';
      if(showAns){if(k===q.answer)cls+=' right';else if(k===selected)cls+=' wrong'}else if(k===selected)cls+=' sel';
-     return `<button class="${cls}" data-k="${k}" ${showAns?'disabled':''}>(${k}) ${esc(q.choices[k]||'')}</button>`}).join('')}
-   ${showAns?`<div class="expl"><span class="tag">${selected===q.answer?'答對':'答案：'+q.answer}</span>　${esc(q.zh)}<br>${esc(q.why)}${p&&p.zh?`<details style="margin-top:6px"><summary class="small">文章中譯</summary><div class="small">${esc(p.zh)}</div></details>`:''}</div>`:''}
+     return `<button class="${cls}" data-k="${k}" ${showAns?'disabled':''}>(${k})${hide?'':' '+esc(q.choices[k]||'')}</button>`}).join('')}
+   ${showAns?`<div class="expl"><span class="tag">${selected===q.answer?'答對':'答案：'+q.answer}</span>　${q.audio?`<div class="small" style="white-space:pre-line;margin:6px 0"><b>${q.script?'錄音內容':'題目'}</b>\n${esc(q.script?q.script+'\nQuestion: '+q.question:'Question: '+q.question)}\n${Object.keys(q.choices).map(k=>'('+k+') '+esc(q.choices[k])).join('\n')}</div><div class="small" style="white-space:pre-line;margin:6px 0">${esc(q.zh)}</div>`:`${esc(q.zh)}<br>`}${esc(q.why)}${p&&p.zh?`<details style="margin-top:6px"><summary class="small">文章中譯</summary><div class="small">${esc(p.zh)}</div></details>`:''}</div>`:''}
   </div>`;
 }
 function drawExam(){
@@ -344,6 +364,66 @@ function drawResult(){
   it.forEach(([s,q])=>{const p=passageFor(s,q.n);html+=qHTML(s,q,{selected:ex.ans[qid(s.session,q.n)],showAns:true,showPassage:p&&p!==lastP});lastP=p});
   $('#app').innerHTML=html;
   $('#nw').onclick=()=>{ex=null;exam()};
+}
+
+
+/* ---------- last year's full exam (session 31, one question at a time) ---------- */
+const FULL=31;
+let fl=store.get('full31',{i:0,ans:{},started:false});
+const saveFl=()=>store.set('full31',fl);
+const SEC_RANGES=[['看圖辨意',1,10],['簡短對話',11,20],['重組',21,25],['詞彙與結構',26,40],['綜合測驗',41,50],['閱讀測驗',51,60]];
+function full(){
+  const S=E.find(x=>x.session===FULL),N=S.questions.length;
+  const answered=Object.keys(fl.ans).length;
+  if(!fl.started){
+    $('#app').innerHTML=`<div class="card"><h2>第 ${FULL} 屆英語能力測驗・第四級（全卷）</h2>
+     <p>依序 1 到 ${N} 題，一次一題。作答後馬上顯示答案與解析，進度會自動存起來，重新整理也不會掉。</p>
+     <ul><li>第 1–10 題 看圖辨意（有圖片和音檔）</li><li>第 11–20 題 簡短對話（有音檔）</li><li>第 21–60 題 重組、詞彙與結構、綜合測驗、閱讀測驗</li></ul>
+     <p class="small mute">正式考試每個音檔只播一次，這裡可以重複播放。聽力題的選項文字要作答後才顯示，跟考試一樣。</p>
+     <div class="row"><button class="b pri" id="fs">${answered?'繼續（第 '+(Math.min(fl.i,N-1)+1)+' 題）':'開始作答'}</button>${answered?'<button class="b" id="fr">重新開始</button>':''}</div></div>`;
+    $('#fs').onclick=()=>{fl.started=true;saveFl();full()};
+    if($('#fr'))$('#fr').onclick=()=>ask('清除這份全卷的作答紀錄並從第 1 題重來？',()=>{resetFull();full()});
+    return;
+  }
+  if(fl.i>=N)return fullResult(S);
+  const q=S.questions[fl.i],sel=fl.ans[q.n],showAns=!!sel;
+  const dots=S.questions.map((x,k)=>{const a=fl.ans[x.n];const c=a?(a===x.answer?'ok':'no'):'';return `<button class="b dot ${c} ${k===fl.i?'cur':''}" data-j="${k}">${x.n}</button>`}).join('');
+  const intro=(q.n===1&&S.intro)?`<div class="card"><b>Part I 聽力說明與例題</b>${audioTag(S.intro.I)}<div class="small mute">可略過，直接聽第 1 題。</div></div>`:(q.n===11&&S.intro)?`<div class="card"><b>Part I 第二部分說明</b>${audioTag(S.intro.II)}<div class="small mute">可略過，直接聽第 11 題。</div></div>`:'';
+  $('#app').innerHTML=`<div class="row" style="justify-content:space-between"><span class="mute small">第 ${FULL} 屆全卷　第 ${q.n} / ${N} 題　${secName(q.n)}</span><span class="mute small">已答 ${answered}</span></div>
+   <div class="prog"><i style="width:${fl.i/N*100}%"></i></div>
+   ${intro}
+   ${qHTML(S,q,{selected:sel,showAns,showPassage:true})}
+   <div class="row"><button class="b" id="pv" ${fl.i===0?'disabled':''}>上一題</button><button class="b pri" id="nx" ${showAns?'':'disabled'}>${fl.i===N-1?'看成績':'下一題'}</button></div>
+   <details style="margin-top:12px"><summary class="small mute">題號一覽（可跳題）</summary><div class="dots">${dots}</div></details>`;
+  document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{
+    if(sel)return;
+    fl.ans[q.n]=b.dataset.k;
+    const id=qid(FULL,q.n);
+    if(b.dataset.k===q.answer)delete wrongQ[id];else wrongQ[id]=true;
+    saveWrong();saveFl();full();
+  });
+  $('#pv').onclick=()=>{fl.i--;saveFl();full();window.scrollTo(0,0)};
+  $('#nx').onclick=()=>{fl.i++;saveFl();full();window.scrollTo(0,0)};
+  document.querySelectorAll('[data-j]').forEach(b=>b.onclick=()=>{fl.i=+b.dataset.j;saveFl();full();window.scrollTo(0,0)});
+}
+function resetFull(){
+  const S=E.find(x=>x.session===FULL);
+  S.questions.forEach(q=>delete wrongQ[qid(FULL,q.n)]);
+  saveWrong();fl={i:0,ans:{},started:false};saveFl();
+}
+function fullResult(S){
+  const N=S.questions.length;
+  const right=S.questions.filter(q=>fl.ans[q.n]===q.answer).length;
+  if(!fl.saved){hist.push({title:`第 ${FULL} 屆全卷`,right,total:N,at:Date.now()});saveHist();fl.saved=true;saveFl()}
+  const rows=SEC_RANGES.map(([name,a,b])=>{const qs=S.questions.filter(q=>q.n>=a&&q.n<=b);const r=qs.filter(q=>fl.ans[q.n]===q.answer).length;return `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0"><span>${name}（${a}–${b}）</span><b>${r} / ${qs.length}</b></div>`}).join('');
+  const bad=S.questions.filter(q=>fl.ans[q.n]!==q.answer);
+  $('#app').innerHTML=`<div class="card"><h2>全卷成績</h2><p style="font-size:28px;margin:0"><b>${right}</b> / ${N} 題</p>
+   <div class="small mute">每題 2 分估算：${right*2} / ${N*2} 分。未作答視為答錯。</div>${rows}
+   ${bad.length?`<h3>答錯或未答的題目</h3><div class="dots">${bad.map(q=>`<button class="b dot no" data-j="${S.questions.indexOf(q)}">${q.n}</button>`).join('')}</div>`:'<p class="good">全部答對！</p>'}
+   <div class="row" style="margin-top:12px"><button class="b pri" data-go="wrong">看錯題本</button><button class="b" id="fr">重新開始</button><button class="b" id="bk">回到最後一題</button></div></div>`;
+  document.querySelectorAll('[data-j]').forEach(b=>b.onclick=()=>{fl.i=+b.dataset.j;saveFl();full();window.scrollTo(0,0)});
+  $('#fr').onclick=()=>ask('清除這份全卷的作答紀錄並從第 1 題重來？',()=>{resetFull();full()});
+  $('#bk').onclick=()=>{fl.i=N-1;saveFl();full()};
 }
 
 /* ---------- wrong book ---------- */
